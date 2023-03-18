@@ -1,6 +1,15 @@
+=== Features ===
+1. Add task data class
+2. Add task spawning function
+
+
+
+=== Optimization ===
 1. It is running slow when they are blocked
 2. run performance check to find bottleneck
 3. check memory usage
+4. keep own maps in numpy for faster access
+    * Map for each type of agent
 
 
 

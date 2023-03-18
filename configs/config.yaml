@@ -1,0 +1,46 @@
+scenario_type: 'image_scenario' # name of one of the categories below
+grid_width: 250 # Width of the map
+grid_height: 250 # Height of the map
+
+
+random_scenario:
+  num_obstacles: 10000
+  num_chutes: 10 # Number of chutes
+  num_infeed: 10 # Number of in-seed
+  num_charging_stations: 10 # Number of charging stations
+  num_agvs: 10 # Number of AGVs
+
+image_scenario:
+  img_dir_path: "/home/zartris/Pictures/BHS/" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+
+  agv_img_name: "None" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  agv_color: [ 0, 255, 255 ] # Color of the AGV in the map image
+
+  chute_img_name: "BHS_Testing_Chutes.png" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  chute_color: [ 255, 0, 0 ] # Color of the chutes in the map image
+
+  infeed_img_name: "BHS_Testing_Infeed.png" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  infeed_color: [ 0, 0, 255 ] # Color of the in-seed in the map image
+
+  obstacle_img_name: "BHS_Testing_Obstacles.png" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  obstacle_color: [ 0, 0, 0 ] # Color of the obstacles in the map image
+  outside_color: [ 150, 150, 150 ] # Color of the outside of the map image
+  floor_color: [ 255, 255, 255 ] # Color of the floor of the map image
+
+  charging_station_img_name: "BHS_Testing_Charging_Stations.png" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  charging_station_color: [ 0, 255, 0 ] # Color of the charging station in the map image
+
+  # (122, 180) to (247, 110)
+  num_obstacles: 0
+  num_chutes: 0 # Number of chutes
+  num_infeed: 0 # Number of in-seed
+  num_charging_stations: 0 # Number of charging stations
+  num_agvs: 1000 # Number of AGVs
+
+agv_params:
+  max_battery: 100 # Maximum battery capacity
+  move_cost: 0.1 # Cost of moving one unit
+  wait_cost: 0.05 # Cost of waiting one unit
+  idle_cost: 0.01 # Cost of idling one unit
+canvas:
+  live_visualisation: True # Visualize the canvas

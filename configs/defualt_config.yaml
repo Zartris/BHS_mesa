@@ -1,0 +1,61 @@
+# The default config is always loaded first, then the config file specified in the command line is loaded.
+seed: 0 # Seed for random number generator
+port: 8521 # Port for the server
+num_units: 10 # Number of units
+
+# These needs to be the same as your map image
+grid_width: 250 # Width of the map
+grid_height: 250 # Height of the map
+
+scenario_type: 'random_scenario' # name of one of the categories below
+random_scenario:
+  num_obstacles: 100
+  num_chutes: 10 # Number of chutes
+  num_infeed: 10 # Number of in-seed
+  num_charging_stations: 10 # Number of charging stations
+  num_agvs: 10 # Number of AGVs
+
+
+image_scenario:
+  img_dir_path: "(No Path given)" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+
+  agv_img_name: "(No Path given)" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  agv_color: [ 0, 0, 255 ] # Color of the AGV in the map image
+
+  chute_img_name: "(No Path given)" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  chute_color: [ 255, 255, 0 ] # Color of the chutes in the map image
+
+  infeed_img_name: "(No Path given)" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  infeed_color: [ 255, 0, 255 ] # Color of the in-seed in the map image
+
+  obstacle_img_name: "(No Path given)" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  obstacle_color: [ 0, 0, 0 ] # Color of the obstacles in the map image
+
+  charging_station_img_name: "(No Path given)" # Path to the map image "/home/zartris/Pictures/BHS/***.png"
+  charging_station_color: [ 0, 255, 0 ] # Color of the charging station in the map image
+
+  outside_color: [ 0, 0, 0 ] # Color of the outside of the map image
+  floor_color: [ 255, 255, 255 ] # Color of the floor of the map image
+
+  num_obstacles: 0
+  num_chutes: 0 # Number of chutes
+  num_infeed: 0 # Number of in-seed
+  num_charging_stations: 0 # Number of charging stations
+  num_agvs: 0 # Number of AGVs
+
+agv_params:
+  max_battery: 100 # Maximum battery capacity
+  move_cost: 1 # Cost of moving one unit
+  wait_cost: 0.5 # Cost of waiting one unit
+  idle_cost: 0.01 # Cost of idling one unit
+
+charging_station_params:
+  charge_amount: 4 # Cost of charging one unit
+
+canvas:
+  live_visualisation: True # Visualize the canvas
+  battery_color_interval: 10 # Interval of battery color change
+  width: 2000 # Width of the canvas
+  height: 2000 # Height of the canvas
+  scale: 4 # Scale canvas based on grid
+

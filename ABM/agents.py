@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+import numpy as np
 from mesa import Agent
 
 
@@ -10,17 +11,18 @@ from mesa import Agent
 
 # TODO:: This is auto generated code. optimize the code
 class AAGV(Agent):
-    def __init__(self, unique_id, model, max_battery: float):
+    def __init__(self, unique_id, model, agv_config: dict):
         super().__init__(unique_id, model)
         self.state = 'idle'
-        self.battery: float = max_battery
-        self.max_battery: float = max_battery
+        self.battery: float = agv_config['max_battery']
+        self.max_battery: float = agv_config['max_battery']
         self.task = None
         self.path = []
         # self.model = model
         # Movement cost for each step TODO:: Make these parameters
-        self.movement_cost = 0.1
-        self.wait_cost = 0.01
+        self.movement_cost = agv_config['move_cost']
+        self.wait_cost = agv_config['move_cost']
+        self.idle_cost = agv_config['idle_cost']
 
     def random_move(self):
         possible_steps = self.model.grid.get_neighborhood(
@@ -61,9 +63,10 @@ class AAGV(Agent):
         if len(self.path) == 0:
             # If there is no path, move randomly
             print(f"\nAgent {self.unique_id} looking for path:")
-            goal = self.model.grid.find_empty()
+            # goal = self.model.grid.find_empty()
+            goal = self.model.empty_coords[self.random.randint(0, len(self.model.empty_coords) - 1)]
             found, path = self.model.find_path(start_x=self.pos[0], start_y=self.pos[1],
-                                                     goal_x=goal[0], goal_y=goal[1])
+                                               goal_x=goal[0], goal_y=goal[1])
             if not found:
                 print("No path found")
                 return
@@ -167,11 +170,11 @@ class AAGV(Agent):
 
 
 class AChargingStation(Agent):
-    def __init__(self, unique_id, model):
+    def __init__(self, unique_id, model, config):
         super().__init__(unique_id, model)
         self.is_free = True
         # self.model: AirportModel = model
-        self.charge_amount = 4
+        self.charge_amount = config['charge_amount']
 
     def step(self):
         self.is_free = True
