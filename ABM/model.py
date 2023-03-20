@@ -22,6 +22,7 @@ class AirportModel(Model):
         self.random.seed(config['seed'])
         np.random.seed(config['seed'])
 
+        self.verbose = config['verbose']
         self._grid_width = grid_width
         self._grid_height = grid_height
         self.grid: MultiGrid = MultiGrid(self._grid_width,
@@ -55,7 +56,8 @@ class AirportModel(Model):
 
         # Create path planning generator
         self.a_star = AStarGenerator(self.obstacle_map)
-        self.a_star.setDebugResult(True)
+        self.a_star.setDebugResult(False)
+        self.a_star.setVerbose(self.verbose)
         # A warmup is performed in order to allocate memory for the path planning algorithm
         # This is done as the first path planning call is much slower than the following ones
         # for agv in self.schedule.agents_by_type[AAGV].values():
@@ -68,18 +70,25 @@ class AirportModel(Model):
         #     # test path planner
         #     found, path = self.a_star.findPath(start_x, start_y, end_x, end_y)
 
-        # Here is a usecase where we don't perform well:
-        found, path, debug_points = self.find_path(122, 180, 247, 110)
-        if found:
-            debug_map = self.obstacle_map.copy() * 255
-            if len(debug_points) > 0:
-                for y, x in debug_points:
-                    debug_map[y, x] = 100
-            for y, x in path:
-                debug_map[y, x] = 170
-            plt.imshow(debug_map.astype(np.uint8), origin='lower')
-            plt.show()
+        # TODO:: Here is a usecase where we don't perform well:
+        # found, path, debug_points = self.find_path(122, 180, 247, 110)
+        # if found:
+        #     debug_map = self.obstacle_map.copy() * 255
+        #     if len(debug_points) > 0:
+        #         for y, x in debug_points:
+        #             debug_map[y, x] = 100
+        #     for y, x in path:
+        #         debug_map[y, x] = 170
+        #     plt.imshow(debug_map.astype(np.uint8), origin='lower')
+        #     plt.show()
+        n = gc.collect()
+        self.print(f"Number of unreachable objects collected by GC: {n}")
 
+    def print(self, s: str):
+        if self.verbose:
+            print(s)
+
+    # @profile
     def find_path(self, start_x, start_y, goal_x, goal_y):
         found, path, debug_closed_set = self.a_star.findPath(start_x, start_y, goal_x, goal_y)
         if found:
@@ -93,8 +102,13 @@ class AirportModel(Model):
 
         # Collect data at the end:
         self.datacollector.collect(self)  # (have to be the last line of the step function)
-        n = gc.collect()
-        print("Number of unreachable objects collected by GC:", n)
+
+    def run_performance_test(self, iterations):
+        start_time = time.perf_counter()
+        for _ in range(iterations):
+            self.step()
+        end_time = time.perf_counter()
+        print(f'Performance test: {iterations} iterations took {end_time - start_time} seconds')
 
     def setup_random_scenario(self, config):
         scenario_config = config['random_scenario']
@@ -203,7 +217,7 @@ class AirportModel(Model):
         # 1. First check for images that exists and insert in map
         empty_space_map = np.ones((self._grid_width, self._grid_height), dtype=np.uint8)
         if Path(scenario_config['img_dir_path'], scenario_config['obstacle_img_name']).exists():
-            print('Inserting obstacles into map')
+            self.print('Inserting obstacles into map')
             obstacle_img = load_image_to_np(Path(scenario_config['img_dir_path'], scenario_config['obstacle_img_name']),
                                             convert=None, remove_alpha=True, rotate=3)
             if obstacle_img.shape[:2] != (self._grid_width, self._grid_height):
@@ -227,7 +241,7 @@ class AirportModel(Model):
                 id_counter += 1
 
         if Path(scenario_config['img_dir_path'], scenario_config['charging_station_img_name']).exists():
-            print('Inserting charging stations into map')
+            self.print('Inserting charging stations into map')
             charging_station_img = load_image_to_np(
                 Path(scenario_config['img_dir_path'], scenario_config['charging_station_img_name']),
                 convert=None, remove_alpha=True, rotate=3)
@@ -248,7 +262,7 @@ class AirportModel(Model):
                 id_counter += 1
 
         if Path(scenario_config['img_dir_path'], scenario_config['infeed_img_name']).exists():
-            print('Inserting infeeds into map')
+            self.print('Inserting infeeds into map')
             infeed_img = load_image_to_np(Path(scenario_config['img_dir_path'], scenario_config['infeed_img_name']),
                                           convert=None, remove_alpha=True, rotate=3)
             if infeed_img.shape[:2] != (self._grid_width, self._grid_height):
@@ -266,7 +280,7 @@ class AirportModel(Model):
                 id_counter += 1
 
         if Path(scenario_config['img_dir_path'], scenario_config['chute_img_name']).exists():
-            print('Inserting chutes into map')
+            self.print('Inserting chutes into map')
             chute_img = load_image_to_np(Path(scenario_config['img_dir_path'], scenario_config['chute_img_name']),
                                          convert=None, remove_alpha=True, rotate=3)
             if chute_img.shape[:2] != (self._grid_width, self._grid_height):
@@ -285,7 +299,7 @@ class AirportModel(Model):
                 id_counter += 1
 
         if Path(scenario_config['img_dir_path'], scenario_config['agv_img_name']).exists():
-            print('Inserting agvs into map')
+            self.print('Inserting agvs into map')
             agv_img = load_image_to_np(Path(scenario_config['img_dir_path'], scenario_config['agv_img_name']),
                                        convert=None, remove_alpha=True, rotate=3)
             if agv_img.shape[:2] != (self._grid_width, self._grid_height):
@@ -308,7 +322,8 @@ class AirportModel(Model):
         self.empty_coords = list_of_empty_coord
         index = 0
         if not Path(scenario_config['img_dir_path'], scenario_config['obstacle_img_name']).exists():
-            print(f'Obstacle map not found.\nInserting {scenario_config["num_obstacles"]} random obstacles into map')
+            self.print(
+                f'Obstacle map not found.\nInserting {scenario_config["num_obstacles"]} random obstacles into map')
             # Create obstacles
             for _ in range(scenario_config['num_obstacles']):
                 x, y = list_of_empty_coord[index]
@@ -319,7 +334,7 @@ class AirportModel(Model):
                 index += 1
 
         if not Path(scenario_config['img_dir_path'], scenario_config['charging_station_img_name']).exists():
-            print(
+            self.print(
                 f'Charging station map not found.\nInserting {scenario_config["num_charging_stations"]} random charging stations into map')
             for _ in range(scenario_config['num_charging_stations']):
                 x, y = list_of_empty_coord[index]
@@ -331,7 +346,7 @@ class AirportModel(Model):
                 index += 1
 
         if not Path(scenario_config['img_dir_path'], scenario_config['infeed_img_name']).exists():
-            print(f'Infeed map not found.\nInserting {scenario_config["num_infeeds"]} random infeeds into map')
+            self.print(f'Infeed map not found.\nInserting {scenario_config["num_infeeds"]} random infeeds into map')
             for _ in range(scenario_config['num_infeeds']):
                 x, y = list_of_empty_coord[index]
                 i = AInfeedStation(id_counter, self)
@@ -342,7 +357,7 @@ class AirportModel(Model):
                 index += 1
 
         if not Path(scenario_config['img_dir_path'], scenario_config['chute_img_name']).exists():
-            print(f'Chute map not found.\nInserting {scenario_config["num_chutes"]} random chutes into map')
+            self.print(f'Chute map not found.\nInserting {scenario_config["num_chutes"]} random chutes into map')
             for _ in range(scenario_config['num_chutes']):
                 x, y = list_of_empty_coord[index]
                 c = AChute(id_counter, self)
@@ -353,7 +368,7 @@ class AirportModel(Model):
                 index += 1
 
         if not Path(scenario_config['img_dir_path'], scenario_config['agv_img_name']).exists():
-            print(f'AGV map not found.\nInserting {scenario_config["num_agvs"]} random AGVs into map')
+            self.print(f'AGV map not found.\nInserting {scenario_config["num_agvs"]} random AGVs into map')
             for _ in range(scenario_config['num_agvs']):
                 x, y = list_of_empty_coord[index]
                 a = AAGV(id_counter, self, config['agv_params'])

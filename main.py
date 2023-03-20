@@ -5,6 +5,9 @@ import argparse
 import yaml
 import collections.abc
 
+from ABM.model import AirportModel
+
+
 def update(d, u):
     for k, v in u.items():
         if isinstance(v, collections.abc.Mapping):
@@ -12,6 +15,7 @@ def update(d, u):
         else:
             d[k] = v
     return d
+
 
 if __name__ == '__main__':
     # Load user args
@@ -27,7 +31,16 @@ if __name__ == '__main__':
         config = yaml.safe_load(file)
 
     # Then we load the updates to the config file
-    with open(str(Path('configs', config_name)), 'r')as file:
+    with open(str(Path('configs', config_name)), 'r') as file:
         config_updates = yaml.safe_load(file)
     config = update(config, config_updates)
-    server.run(config)
+    if not config['performance_test']:
+        server.run(config)
+    else:
+        GRID_WIDTH = config['grid_width']
+        GRID_HEIGHT = config['grid_height']
+        AirportModel(config, GRID_WIDTH, GRID_HEIGHT).run_performance_test(1000)
+
+        # For line profiling use:
+        # @profile but don't import anything
+        # Then run: kernprof -lv main.py

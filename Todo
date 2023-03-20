@@ -1,6 +1,9 @@
 === Features ===
 1. Add task data class
 2. Add task spawning function
+3. Add roads with different speed limits
+4. Add kinematic model to AGV's
+5.
 
 
 

@@ -2,6 +2,9 @@
 seed: 0 # Seed for random number generator
 port: 8521 # Port for the server
 num_units: 10 # Number of units
+max_steps: -1 # Maximum number of steps -1 = Forever
+performance_test: True # Run performance test
+verbose: False # Print verbose output
 
 # These needs to be the same as your map image
 grid_width: 250 # Width of the map

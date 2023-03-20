@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import time
 
-import numpy as np
-from mesa import Agent
+from mesa import Agent, Model
 
 
 # from ABM.model import AirportModel
 
+class AgentPlus(Agent):
+    def __init__(self, unique_id: int, model: Model) -> None:
+        super().__init__(unique_id, model)
 
-# TODO:: This is auto generated code. optimize the code
-class AAGV(Agent):
+    def print(self, s: str):
+        if self.model.verbose:
+            print(s)
+
+
+class AAGV(AgentPlus):
     def __init__(self, unique_id, model, agv_config: dict):
         super().__init__(unique_id, model)
         self.state = 'idle'
@@ -18,8 +24,8 @@ class AAGV(Agent):
         self.max_battery: float = agv_config['max_battery']
         self.task = None
         self.path = []
-        # self.model = model
-        # Movement cost for each step TODO:: Make these parameters
+
+        # Movement cost for each step
         self.movement_cost = agv_config['move_cost']
         self.wait_cost = agv_config['move_cost']
         self.idle_cost = agv_config['idle_cost']
@@ -43,7 +49,7 @@ class AAGV(Agent):
             for agent in self.model.grid.iter_cell_list_contents(new_position):
                 if isinstance(agent, AObstacle) or isinstance(agent, AAGV):
                     occupied = True
-                    print("Agent {} is blocked by {}".format(self.unique_id, agent.unique_id))
+                    self.print("Agent {} is blocked by {}".format(self.unique_id, agent.unique_id))
                     break
             # If the new position is not occupied, move to it
             if not occupied:
@@ -62,17 +68,17 @@ class AAGV(Agent):
     def move(self):
         if len(self.path) == 0:
             # If there is no path, move randomly
-            print(f"\nAgent {self.unique_id} looking for path:")
+            self.print(f"\nAgent {self.unique_id} looking for path:")
             # goal = self.model.grid.find_empty()
             goal = self.model.empty_coords[self.random.randint(0, len(self.model.empty_coords) - 1)]
-            found, path = self.model.find_path(start_x=self.pos[0], start_y=self.pos[1],
-                                               goal_x=goal[0], goal_y=goal[1])
+            found, path, _ = self.model.find_path(start_x=self.pos[0], start_y=self.pos[1],
+                                                  goal_x=goal[0], goal_y=goal[1])
             if not found:
-                print("No path found")
+                self.print("No path found")
                 return
 
             self.path = path
-            print("\n")
+            self.print("\n")
 
         # Check if we should move:
         if self.pos == self.path[0]:
@@ -86,7 +92,7 @@ class AAGV(Agent):
         for agent in self.model.grid.iter_cell_list_contents(self.path[0]):
             if isinstance(agent, AObstacle) or isinstance(agent, AAGV):
                 occupied = True
-                print("Agent {} is blocked by {}".format(self.unique_id, agent.unique_id))
+                self.print("Agent {} is blocked by {}".format(self.unique_id, agent.unique_id))
                 break
         if not occupied:
             next_position = self.path.pop(0)
@@ -98,6 +104,7 @@ class AAGV(Agent):
         # Check if there is a charging station available
         charging_stations = self.model.schedule.charging_stations
         available_stations = [s for s in charging_stations if s.is_available()]
+        # TODO:: if not urgent find a free charging station
         if len(available_stations) > 0:
             # Select a random charging station and move to it
             charging_station = self.random.choice(available_stations)
@@ -107,6 +114,7 @@ class AAGV(Agent):
         else:
             # If there are no available charging stations, wait
             self.state = 'wait'
+        # TODO:: if urgent, move to the nearest charging station and push the other agent out of the way
 
     def charge_battery(self, amount):
         """This is only called by the charging station"""
@@ -137,7 +145,7 @@ class AAGV(Agent):
         # check agent condition:
         # 1. if battery is low, look for charging station
         # 2. if there is a task, pick it up
-        # 3. if there is no task, move randomly (change for path finding)
+        # 3. if there is no task and battery is high, move to idle position
 
         # if self.battery < 10:
         #     self.look_for_charge_station()
@@ -200,8 +208,17 @@ class AInfeedStation(Agent):
         pass
 
     def step(self):
-        # Define infeed logic here
+        # Two states, either random task spawn or read from file
         pass
+
+    def get_task(self):
+        # Two states, either random task spawn or read from file
+        if self.model.random_task:
+            # Random task generation
+            pass
+        else:
+            # Read from file
+            pass
 
 
 class AChute(Agent):
@@ -213,10 +230,12 @@ class AChute(Agent):
         pass
 
     def step(self):
-        # Define chute logic here
+        # Check if a AGV is in the same cell, if so, check if it has a task with goal to this chute
+        # If so, mark the task as received
         pass
 
 
 class AObstacle(Agent):
     def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
+        # Used for visualization
