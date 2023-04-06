@@ -1,18 +1,19 @@
 import math
-from pathlib import Path
 from typing import Dict
 
-import matplotlib.pyplot as plt
-import numpy as np
-from PIL import Image
 from colour import Color
 from mesa.visualization.ModularVisualization import ModularServer
-from mesa.visualization.UserParam import NumberInput
 from mesa.visualization.modules import CanvasGrid, ChartModule
 
-from ABM.agents import AAGV, AChargingStation, AInfeedStation, AChute, AObstacle
-from ABM.model import AirportModel
-from ABM.utils import load_image_to_np
+from ABM.space_continuous.model import AirportModelContinuous
+from ABM.space_continuous.viz.visualisation import SimpleCanvas
+from ABM.space_discrete.agents.agents import AAGV, AChargingStation, AInfeedStation, AChute, AObstacle
+from ABM.space_continuous.agents.agv import AAGV as AAGV_c
+from ABM.space_continuous.agents.charging_station import AChargingStation as AChargingStation_c
+from ABM.space_continuous.agents.infeed_station import AInfeedStation as AInfeedStation_c
+from ABM.space_continuous.agents.chute import AChute as AChute_c
+from ABM.space_continuous.agents.obstacle import AObstacle as AObstacle_c
+from ABM.space_discrete.model import AirportModel
 
 
 def run(config: Dict):
@@ -69,7 +70,7 @@ def run(config: Dict):
         else:
             color = BATTERY_LEVEL_COLORS[math.ceil(battery_percentage * BATTERY_COLOR_INTERVALS) - 1]
         portrayal["Color"] = color.hex
-        portrayal["r"] = 1
+        portrayal["r"] = 0.4
         # portrayal["text"] = f"id: {agent.unique_id} battery: {battery_percentage:.2f}"
         portrayal["Layer"] = 2
         return portrayal
@@ -95,48 +96,62 @@ def run(config: Dict):
             "Shape": "rect",  # type "circle", "rect", "image"
             "Filled": "true",
             "Color": "white",
-            # "r": 0.01,
-            "w": 1,
-            "h": 1,
+            "r": 1.,
+            "w": 1.,
+            "h": 1.,
             "text": "",
             "Layer": 1,
             "text_color": "black",
             "scale": 1.0,
         }
-        if isinstance(agent, AAGV):
+        if isinstance(agent, AAGV) or isinstance(agent, AAGV_c):
             return portrayal_method_for_agv(agent, default_portrayal)
-        elif isinstance(agent, AChargingStation):
+        elif isinstance(agent, AChargingStation) or isinstance(agent, AChargingStation_c):
             return portrayal_method_for_charging_station(agent, default_portrayal)
-        elif isinstance(agent, AInfeedStation):
+        elif isinstance(agent, AInfeedStation) or isinstance(agent, AInfeedStation_c):
             return portrayal_method_for_infeed_station(agent, default_portrayal)
-        elif isinstance(agent, AChute):
+        elif isinstance(agent, AChute) or isinstance(agent, AChute_c):
             return portrayal_method_for_chute(agent, default_portrayal)
-        elif isinstance(agent, AObstacle):
+        elif isinstance(agent, AObstacle) or isinstance(agent, AObstacle_c):
             return portrayal_method_for_obstacle(agent, default_portrayal)
         else:
             raise ValueError("Unknown agent type")
 
     visualize = []
     if config['canvas']['live_visualisation']:
-        grid = CanvasGrid(
-            portrayal_method=agent_portrayal,
-            grid_width=GRID_WIDTH,
-            grid_height=GRID_HEIGHT,
-            canvas_width=CANVAS_WIDTH,
-            canvas_height=CANVAS_HEIGHT,
-        )
-        chart = ChartModule(
+        if config['continuous']:
+            canvas = SimpleCanvas(agent_portrayal, CANVAS_WIDTH, CANVAS_HEIGHT)
+        else:
+            canvas = CanvasGrid(
+                portrayal_method=agent_portrayal,
+                grid_width=GRID_WIDTH,
+                grid_height=GRID_HEIGHT,
+                canvas_width=CANVAS_WIDTH,
+                canvas_height=CANVAS_HEIGHT,
+            )
+        agent_step_time_chart = ChartModule(
             [
                 {"Label": "Max step time", "Color": "red"},
             ],
             canvas_height=300,
             data_collector_name="datacollector",
         )
-        visualize = [grid, chart]
+        server_step_time_chart = ChartModule(
+            [
+                {"Label": "Max server step time", "Color": "red"},
+            ],
+            canvas_height=300,
+            data_collector_name="datacollector",
+        )
+        visualize = [canvas, server_step_time_chart, agent_step_time_chart]
         # visualize = [chart]
 
+    if config['continuous']:
+        model = AirportModelContinuous
+    else:
+        model = AirportModel
     server = ModularServer(
-        AirportModel, visualize, "BHS Model", simulation_params
+        model, visualize, "BHS Model", simulation_params
     )
 
     server.port = config['port']

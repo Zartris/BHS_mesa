@@ -5,7 +5,7 @@ import argparse
 import yaml
 import collections.abc
 
-from ABM.model import AirportModel
+from ABM.space_discrete.model import AirportModel
 
 
 def update(d, u):

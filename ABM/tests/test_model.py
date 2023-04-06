@@ -1,6 +1,6 @@
 import unittest
 import yaml
-from ABM.model import AirportModel
+from ABM.space_discrete.model import AirportModel
 
 
 class TestModel(unittest.TestCase):

@@ -1,6 +1,10 @@
 scenario_type: 'image_scenario' # name of one of the categories below
 grid_width: 250 # Width of the map
 grid_height: 250 # Height of the map
+performance_test: False # Run performance test
+verbose: False # Print verbose output
+
+continuous: True # Continuous or discrete action space
 
 
 random_scenario:

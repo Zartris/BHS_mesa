@@ -23,12 +23,23 @@ class AAGV(AgentPlus):
         self.battery: float = agv_config['max_battery']
         self.max_battery: float = agv_config['max_battery']
         self.task = None
-        self.path = []
+        self.path: list = []
+        self._goal = None
 
         # Movement cost for each step
         self.movement_cost = agv_config['move_cost']
         self.wait_cost = agv_config['move_cost']
         self.idle_cost = agv_config['idle_cost']
+
+    @property
+    def goal(self):
+        if self._goal is None:
+            return self.pos
+        return self._goal
+
+    @goal.setter
+    def goal(self, value: tuple):
+        self._goal = value
 
     def random_move(self):
         possible_steps = self.model.grid.get_neighborhood(
@@ -65,32 +76,32 @@ class AAGV(AgentPlus):
         # Move the agent to the new position
         self.model.grid.move_agent(self, new_position)
 
+    # @profile
     def move(self):
-        if len(self.path) == 0:
-            # If there is no path, move randomly
-            self.print(f"\nAgent {self.unique_id} looking for path:")
-            # goal = self.model.grid.find_empty()
-            goal = self.model.empty_coords[self.random.randint(0, len(self.model.empty_coords) - 1)]
-            found, path, _ = self.model.find_path(start_x=self.pos[0], start_y=self.pos[1],
-                                                  goal_x=goal[0], goal_y=goal[1])
-            if not found:
-                self.print("No path found")
-                return
+        if len(self.path) == 0 or self.pos == self.goal:
+            # testing: set new goal and wait for next timestep
+            self.goal = tuple(self.model.empty_coords[self.random.randint(0, len(self.model.empty_coords) - 1)])
+            self.print(f"\nAgent {self.unique_id} looking for path to {self.goal}:")
+            self.model.replan = True
 
-            self.path = path
-            self.print("\n")
+            # If there is no path, move randomly
+            # goal = self.model.grid.find_empty()
+            if len(self.path) == 0:
+                # Stay idle if there is no path and wait for path generation
+                self.model.grid.move_agent(self, self.pos)
+                return  # return early
 
         # Check if we should move:
-        if self.pos == self.path[0]:
+        if self.pos == tuple(self.path[0]):
             # If we are already at the next position, remove it from the path
             self.path.pop(0)
             self.model.grid.move_agent(self, self.pos)
             return  # return early
 
-            # If there is a path, move to the next position
+        # If there is a path, move to the next position
         occupied = False
-        for agent in self.model.grid.iter_cell_list_contents(self.path[0]):
-            if isinstance(agent, AObstacle) or isinstance(agent, AAGV):
+        for agent in self.model.grid.iter_cell_list_contents(tuple(self.path[0])):
+            if isinstance(agent, AObstacle):  # or isinstance(agent, AAGV):
                 occupied = True
                 self.print("Agent {} is blocked by {}".format(self.unique_id, agent.unique_id))
                 break

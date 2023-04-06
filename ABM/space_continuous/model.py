@@ -1,42 +1,50 @@
-import time
+from pathlib import Path
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
-from mesa import Model, DataCollector
-from mesa.space import MultiGrid
-from mesa.time import RandomActivation, RandomActivationByType
+from mesa import DataCollector
+from mesa.time import RandomActivationByType
+from path_planning_lib import MAPFProblemDefinition, PIBTSolver
 
-from ABM.agents import AChargingStation, AInfeedStation, AChute, AAGV, AObstacle
-from path_planning import AStarGenerator
+from ABM.core.base_model import AirportModelBase
+from ABM.space_continuous.agents.agv import AAGV
+from ABM.space_continuous.agents.charging_station import AChargingStation
+from ABM.space_continuous.agents.chute import AChute
+from ABM.space_continuous.agents.infeed_station import AInfeedStation
+from ABM.space_continuous.agents.obstacle import AObstacle
+from ABM.space_continuous.space.my_continues_space import MyContinuousSpace
 
 from ABM.utils import load_image_to_np
-import gc
 
 
-class AirportModel(Model):
+class AirportModelContinuous(AirportModelBase):
+    """
+    The AirportModel class represents the model for an airport in the Agent-Based Model (ABM) simulation.
+    It extends the Mesa Model class and defines the simulation's grid, schedules, data collection,
+    and scenario setups.
+    """
+
     def __init__(self, config, grid_width, grid_height, *args: Any, **kwargs: Any):
-        super().__init__(*args, **kwargs)
-        self.random.seed(config['seed'])
-        np.random.seed(config['seed'])
+        """
+        Initialize an AirportModel instance with the provided configuration, grid dimensions, and other parameters.
 
-        self.verbose = config['verbose']
-        self._grid_width = grid_width
-        self._grid_height = grid_height
-        self.grid: MultiGrid = MultiGrid(self._grid_width,
-                                         self._grid_height,
-                                         torus=False)  # torus is false because we don't want the agents to wrap around the grid
-        # Data stores
-        self.obstacle_map = np.zeros((self._grid_width, self._grid_height), dtype=np.uint8)
-        self.chutes_dict = {}
-        self.charging_stations_dict = {}
-        self.infeed_dict = {}
+        Args:
+            config (dict): The configuration dictionary containing parameters for the simulation.
+            grid_width (int): The width of the simulation grid.
+            grid_height (int): The height of the simulation grid.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+        """
+        super().__init__(config, grid_width, grid_height, *args, **kwargs)
+
+        self.grid: MyContinuousSpace = MyContinuousSpace(x_max=self._grid_width,
+                                                         y_max=self._grid_height,
+                                                         torus=False)  # torus is false because we don't want the agents to wrap around the grid
 
         # Initialize the activation schedule by type as we want to have different activation schedules for different agents
         self.schedule = RandomActivationByType(self)
-
+        self.collision_objs = {"dynamic": [], "static": []}
         # Setting up the scenario
         if config['scenario_type'] == 'random_scenario':
             self.setup_random_scenario(config)
@@ -51,13 +59,30 @@ class AirportModel(Model):
                 # "NAME OF DATA": lambda m: m.schedule.get some kind of data (AAGV)
                 "Max step time": lambda m: np.max(
                     [agv.step_time for agv in m.schedule.agents_by_type[AAGV].values()]),
+                "Max server step time": lambda m: m.server_step_time,
             }
         )
 
-        # Create path planning generator
-        self.a_star = AStarGenerator(self.obstacle_map)
-        self.a_star.setDebugResult(False)
-        self.a_star.setVerbose(self.verbose)
+        # Setting up problem definition
+        edge_cost = np.ones((self._grid_width, self._grid_height), dtype=int)
+        self.problem_definition = MAPFProblemDefinition(_instance_name="Test",
+                                                        _seed=config['seed'],
+                                                        _max_comp_time=config['path_planner']['max_comp_time'],
+                                                        _max_timestep=config['path_planner']['max_timestep'],
+                                                        _num_agents=self.num_units,
+                                                        grid_map=np.copy(self.obstacle_map).astype(int).tolist(),
+                                                        edge_cost_moving_up=edge_cost.tolist(),
+                                                        edge_cost_moving_down=edge_cost.tolist(),
+                                                        edge_cost_moving_left=edge_cost.tolist(),
+                                                        edge_cost_moving_right=edge_cost.tolist())
+        # Initiate config
+        self.get_and_set_config()
+
+        s, g, p = self.problem_definition.getConfigs()
+
+        self.pibt_solver = PIBTSolver(self.problem_definition)
+
+        self.replan = False
         # A warmup is performed in order to allocate memory for the path planning algorithm
         # This is done as the first path planning call is much slower than the following ones
         # for agv in self.schedule.agents_by_type[AAGV].values():
@@ -81,46 +106,99 @@ class AirportModel(Model):
         #         debug_map[y, x] = 170
         #     plt.imshow(debug_map.astype(np.uint8), origin='lower')
         #     plt.show()
-        n = gc.collect()
-        self.print(f"Number of unreachable objects collected by GC: {n}")
 
-    def print(self, s: str):
-        if self.verbose:
-            print(s)
+    def set_config(self, start_pos, goal_pos, priority):
+        """
+        Set the configuration for the problem definition with the given agent positions, goals, and priorities.
 
-    # @profile
-    def find_path(self, start_x, start_y, goal_x, goal_y):
-        found, path, debug_closed_set = self.a_star.findPath(start_x, start_y, goal_x, goal_y)
-        if found:
-            path = [(x, y) for x, y in path[::-1]]
-            debug_closed_set = [(x, y) for x, y in debug_closed_set[::-1]]
-        return found, path, debug_closed_set
+        Args:
+            start_pos (list): A list of agent start positions.
+            goal_pos (list): A list of agent goal positions.
+            priority (list): A list of agent priorities.
+        """
+        # print("START POSITIONS:")
+        #
+        # for x, y in start_pos:
+        #     print("{", end="")
+        #     print(f"{x}, {y}", end="")
+        #     print("},", end="\n")
+        #
+        # print("GOAL POSITIONS:")
+        #
+        # for x, y in goal_pos:
+        #     print("{", end="")
+        #     print(f"{x}, {y}", end="")
+        #     print("},", end="\n")
+        #
+        # print("PRIORITIES POSITIONS:")
+        # print("{", end="")
+        # for p in priority:
+        #     print(f"{p},", end="")
+        # print("}", end="\n")
+        self.problem_definition.setConfig(start_pos, goal_pos, priority)
 
-    def step(self):
-        # Compute the next step
-        self.schedule.step()
+    def get_and_set_config(self):
+        """
+        Retrieve and set the configuration for the problem definition using the current agent positions, goals, and priorities.
+        """
+        start_pos, goal_pos, priority = self.get_config()
+        self.set_config(start_pos, goal_pos, priority)
 
-        # Collect data at the end:
-        self.datacollector.collect(self)  # (have to be the last line of the step function)
+    def find_paths(self):
+        """
+        Find paths for agents using the PIBT solver.
+        """
+        # Initiate config
+        self.get_and_set_config()
 
-    def run_performance_test(self, iterations):
-        start_time = time.perf_counter()
-        for _ in range(iterations):
-            self.step()
-        end_time = time.perf_counter()
-        print(f'Performance test: {iterations} iterations took {end_time - start_time} seconds')
+        self.pibt_solver = PIBTSolver(self.problem_definition)
+
+        self.pibt_solver.solve()
+        if self.pibt_solver.succeed():
+            solution = self.pibt_solver.getSolution()
+            for agent_index, agv in enumerate(self.agv_dict.values()):
+                path = solution.getPathToGoalXY(agent_index)
+                # print(f"Agent {agent_index} path: {path}")
+                # Path contains the start position, so we remove it
+                agv.path = path[1:].tolist()
+                debug = 0
+        else:
+            print("No solution found (in time)!")
+            solution = self.pibt_solver.getSolution()
+            for agent_index, agv in enumerate(self.agv_dict.values()):
+                path = solution.getPathXY(agent_index)
+                # print(f"Agent {agent_index} path: {path}")
+                # Path contains the start position, so we remove it
+                agv.path = path[1:].tolist()
+                if list(agv.goal) != path[-1].tolist():
+                    print(f"Agent {agent_index} goal {agv.goal} not at end of path!")
+                    if list(agv.goal) not in path:
+                        print(f"Agent {agent_index} goal {agv.goal} not in path!")
+                debug = 0
+        s, g, p = self.problem_definition.getConfigs()
+        self.print(self.pibt_solver.printResult())
+
+    def server_action(self):
+        if self.replan:
+            self.replan = False
+            self.find_paths()
 
     def setup_random_scenario(self, config):
+        """
+        Set up a random scenario for the simulation based on the given configuration.
+
+        Args:
+            config (dict): The configuration dictionary containing parameters for the random scenario.
+        """
         scenario_config = config['random_scenario']
-
+        self.num_units = scenario_config['num_agvs']
         id_counter = 0
-        # we can cheat here as we know that the first agents are the obstacles so every spaces are free
-        # Get unique random positions for the obstacles
 
-        empty_spaces = self.grid.empties
+        # Create obstacles
+        empty_spaces = [(x, y) for x in range(self._grid_width) for y in range(self._grid_height)]
         empty_spaces = self.random.shuffle(empty_spaces)
         for _ in range(scenario_config['num_obstacles']):
-            o = AObstacle(id_counter, self)
+            o = AObstacle(id_counter, self, config["obstacle_params"])
             coord = empty_spaces[id_counter]
             self.grid.place_agent(o, coord)
             self.obstacle_map[coord.x, coord.y] = 1
@@ -137,7 +215,7 @@ class AirportModel(Model):
 
         # Create infeed stations
         for _ in range(scenario_config['num_infeed']):
-            infeed = AInfeedStation(id_counter, self)
+            infeed = AInfeedStation(id_counter, self, config["infeed_params"])
             self.schedule.add(infeed)
             coord = empty_spaces[id_counter]
             self.grid.place_agent(infeed, coord)
@@ -146,7 +224,7 @@ class AirportModel(Model):
 
         # Create chutes
         for _ in range(scenario_config['num_chutes']):
-            c = AChute(id_counter, self)
+            c = AChute(id_counter, self, config["chute_params"])
             self.schedule.add(c)
             coord = empty_spaces[id_counter]
             self.grid.place_agent(c, coord)
@@ -159,64 +237,26 @@ class AirportModel(Model):
             self.schedule.add(agv)
             coord = empty_spaces[id_counter]
             self.grid.place_agent(agv, coord)
+            self.agv_dict[id_counter] = agv
             id_counter += 1
-        #
-        # obstacle_pos = np.random.choice(self._grid_width * self._grid_height, size=scenario_config['num_obstacles'],
-        #                                 replace=False)
-        # # Convert number to x, y coordinates
-        # xs = obstacle_pos % self._grid_width
-        # ys = np.floor(obstacle_pos / self._grid_height).astype(np.uint)
-        # obstacle_pos = np.transpose([xs, ys]).astype(np.uint)
-        # # Create obstacles and obstacle map
-        # for x, y in obstacle_pos:
-        #     start = time.perf_counter()
-        #     o = AObstacle(id_counter, self)
-        #     # x, y = self.grid.find_empty()  # Slow because we need to sort each time
-        #     self.obstacle_map[x, y] = 1
-        #     self.grid.place_agent(o, (x, y))
-        #     id_counter += 1
-        #     print(f'Obstacle {id_counter} created in {time.perf_counter() - start} seconds')
-        #
-        # # Create charging stations
-        # for _ in range(scenario_config['num_charging_stations']):
-        #     cs = AChargingStation(id_counter, self, config['charging_station_params'])
-        #     self.schedule.add(cs)
-        #     x, y = self.grid.find_empty()
-        #     self.grid.place_agent(cs, (x, y))
-        #     id_counter += 1
-        #
-        # # Create infeed stations
-        # for _ in range(scenario_config['num_infeed']):
-        #     infeed = AInfeedStation(id_counter, self)
-        #     self.schedule.add(infeed)
-        #     x, y = self.grid.find_empty()
-        #     self.grid.place_agent(infeed, (x, y))
-        #     id_counter += 1
-        #
-        # # Create chutes
-        # for _ in range(scenario_config['num_chutes']):
-        #     c = AChute(id_counter, self)
-        #     self.schedule.add(c)
-        #     x, y = self.grid.find_empty()
-        #     self.grid.place_agent(c, (x, y))
-        #     id_counter += 1
-        #
-        # # Create AGV agents
-        # for _ in range(scenario_config['num_agvs']):
-        #     agv = AAGV(id_counter, self, config['agv_params'])
-        #     self.schedule.add(agv)
-        #     x, y = self.grid.find_empty()
-        #     self.grid.place_agent(agv, (x, y))
-        #     id_counter += 1
 
     def setup_scenario_from_image(self, config):
+        """
+        Set up a scenario for the simulation using images as input for the configuration.
+
+        Args:
+            config (dict): The configuration dictionary containing parameters for the scenario.
+        """
         id_counter = 0
         # Load image
         scenario_config = config['image_scenario']
+        self.num_units = scenario_config['num_agvs']
 
         # 1. First check for images that exists and insert in map
+        ###################### OBSTACLES FROM IMAGE ###########################
         empty_space_map = np.ones((self._grid_width, self._grid_height), dtype=np.uint8)
         if Path(scenario_config['img_dir_path'], scenario_config['obstacle_img_name']).exists():
+            # Code to process obstacles from image
             self.print('Inserting obstacles into map')
             obstacle_img = load_image_to_np(Path(scenario_config['img_dir_path'], scenario_config['obstacle_img_name']),
                                             convert=None, remove_alpha=True, rotate=3)
@@ -232,15 +272,19 @@ class AirportModel(Model):
 
             obstacles = np.where(np.all(obstacle_img[:, :] == scenario_config["obstacle_color"], 2))
             self.obstacle_map[obstacles] = 1  # Find all obstacles
+            outside = np.where(np.all(obstacle_img[:, :] == scenario_config["outside_color"], 2))
+            self.obstacle_map[outside] = 1  # Find all obstacles
             obstacles = np.transpose(obstacles)
 
-            # Create obstacles
+            # Code to place an obstacle in the grid
             for x, y in obstacles:
-                o = AObstacle(id_counter, self)
+                o = AObstacle(id_counter, self, config["obstacle_params"])
                 self.grid.place_agent(o, (x, y))  # Sets the position of the agent
                 id_counter += 1
 
+        ###################### CHARGING STATIONS FROM IMAGE ###########################
         if Path(scenario_config['img_dir_path'], scenario_config['charging_station_img_name']).exists():
+            # Code to process charging stations from image
             self.print('Inserting charging stations into map')
             charging_station_img = load_image_to_np(
                 Path(scenario_config['img_dir_path'], scenario_config['charging_station_img_name']),
@@ -254,6 +298,8 @@ class AirportModel(Model):
             charging_stations = np.where(
                 np.all(charging_station_img[:, :] == scenario_config["charging_station_color"], 2))
             charging_stations = np.transpose(charging_stations)
+
+            # Code to place a charging station in the grid
             for x, y in charging_stations:
                 cs = AChargingStation(id_counter, self, config['charging_station_params'])
                 self.schedule.add(cs)
@@ -261,7 +307,9 @@ class AirportModel(Model):
                 self.grid.place_agent(cs, (x, y))
                 id_counter += 1
 
+        ###################### INFEED FROM IMAGE ###########################
         if Path(scenario_config['img_dir_path'], scenario_config['infeed_img_name']).exists():
+            # Code to process infeeds from image
             self.print('Inserting infeeds into map')
             infeed_img = load_image_to_np(Path(scenario_config['img_dir_path'], scenario_config['infeed_img_name']),
                                           convert=None, remove_alpha=True, rotate=3)
@@ -273,13 +321,16 @@ class AirportModel(Model):
 
             infeeds = np.where(np.all(infeed_img[:, :] == scenario_config["infeed_color"], 2))
             infeeds = np.transpose(infeeds)
+            # Code to place an infeed in the grid
             for x, y in infeeds:
-                i = AInfeedStation(id_counter, self)
+                i = AInfeedStation(id_counter, self, config["infeed_params"])
                 self.infeed_dict[(x, y)] = i
                 self.grid.place_agent(i, (x, y))
                 id_counter += 1
 
+        ###################### CHUTE FROM IMAGE ###########################
         if Path(scenario_config['img_dir_path'], scenario_config['chute_img_name']).exists():
+            # Code to process chutes from image
             self.print('Inserting chutes into map')
             chute_img = load_image_to_np(Path(scenario_config['img_dir_path'], scenario_config['chute_img_name']),
                                          convert=None, remove_alpha=True, rotate=3)
@@ -291,13 +342,15 @@ class AirportModel(Model):
 
             chutes = np.where(np.all(chute_img[:, :] == scenario_config["chute_color"], 2))
             chutes = np.transpose(chutes)
+            # Code to place a chute in the grid
             for x, y in chutes:
-                c = AChute(id_counter, self)
+                c = AChute(id_counter, self, config["chute_params"])
                 self.schedule.add(c)
                 self.chutes_dict[(x, y)] = c
                 self.grid.place_agent(c, (x, y))
                 id_counter += 1
 
+        ###################### AGVS FROM IMAGE ###########################
         if Path(scenario_config['img_dir_path'], scenario_config['agv_img_name']).exists():
             self.print('Inserting agvs into map')
             agv_img = load_image_to_np(Path(scenario_config['img_dir_path'], scenario_config['agv_img_name']),
@@ -314,6 +367,7 @@ class AirportModel(Model):
                 a = AAGV(id_counter, self, config['agv_params'])
                 self.schedule.add(a)
                 self.grid.place_agent(a, (x, y))
+                self.agv_dict[id_counter] = a
                 id_counter += 1
 
         # 2. Then check for images that does not exists and insert random in map
@@ -321,18 +375,20 @@ class AirportModel(Model):
         np.random.shuffle(list_of_empty_coord)
         self.empty_coords = list_of_empty_coord
         index = 0
+        ###################### OBSTACLES RANDOM ###########################
         if not Path(scenario_config['img_dir_path'], scenario_config['obstacle_img_name']).exists():
             self.print(
                 f'Obstacle map not found.\nInserting {scenario_config["num_obstacles"]} random obstacles into map')
             # Create obstacles
             for _ in range(scenario_config['num_obstacles']):
                 x, y = list_of_empty_coord[index]
-                o = AObstacle(id_counter, self)
+                o = AObstacle(id_counter, self, config["obstacle_params"])
                 self.grid.place_agent(o, (x, y))
                 self.obstacle_map[x, y] = 1
                 id_counter += 1
                 index += 1
 
+        ###################### CHARGING STATION RANDOM ###########################
         if not Path(scenario_config['img_dir_path'], scenario_config['charging_station_img_name']).exists():
             self.print(
                 f'Charging station map not found.\nInserting {scenario_config["num_charging_stations"]} random charging stations into map')
@@ -345,28 +401,31 @@ class AirportModel(Model):
                 id_counter += 1
                 index += 1
 
+        ###################### INFEED RANDOM ###########################
         if not Path(scenario_config['img_dir_path'], scenario_config['infeed_img_name']).exists():
             self.print(f'Infeed map not found.\nInserting {scenario_config["num_infeeds"]} random infeeds into map')
             for _ in range(scenario_config['num_infeeds']):
                 x, y = list_of_empty_coord[index]
-                i = AInfeedStation(id_counter, self)
+                i = AInfeedStation(id_counter, self, config["infeed_params"])
                 self.infeed_dict[(x, y)] = i
                 self.schedule.add(i)
                 self.grid.place_agent(i, (x, y))
                 id_counter += 1
                 index += 1
 
+        ###################### CHUTE RANDOM ###########################
         if not Path(scenario_config['img_dir_path'], scenario_config['chute_img_name']).exists():
             self.print(f'Chute map not found.\nInserting {scenario_config["num_chutes"]} random chutes into map')
             for _ in range(scenario_config['num_chutes']):
                 x, y = list_of_empty_coord[index]
-                c = AChute(id_counter, self)
+                c = AChute(id_counter, self, config["chute_params"])
                 self.chutes_dict[(x, y)] = c
                 self.schedule.add(c)
                 self.grid.place_agent(c, (x, y))
                 id_counter += 1
                 index += 1
 
+        ###################### AGVS RANDOM ###########################
         if not Path(scenario_config['img_dir_path'], scenario_config['agv_img_name']).exists():
             self.print(f'AGV map not found.\nInserting {scenario_config["num_agvs"]} random AGVs into map')
             for _ in range(scenario_config['num_agvs']):
@@ -374,5 +433,6 @@ class AirportModel(Model):
                 a = AAGV(id_counter, self, config['agv_params'])
                 self.schedule.add(a)
                 self.grid.place_agent(a, (x, y))
+                self.agv_dict[id_counter] = a
                 id_counter += 1
                 index += 1

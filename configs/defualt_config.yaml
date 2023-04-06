@@ -1,14 +1,16 @@
 # The default config is always loaded first, then the config file specified in the command line is loaded.
 seed: 0 # Seed for random number generator
 port: 8521 # Port for the server
-num_units: 10 # Number of units
 max_steps: -1 # Maximum number of steps -1 = Forever
-performance_test: True # Run performance test
+performance_test: False # Run performance test
 verbose: False # Print verbose output
 
 # These needs to be the same as your map image
 grid_width: 250 # Width of the map
 grid_height: 250 # Height of the map
+continuous: False # Continuous or discrete action space
+dt: 0.1 # Time step for continuous action space
+pixel_size_in_meters: 1 # Size of one pixel in meters
 
 scenario_type: 'random_scenario' # name of one of the categories below
 random_scenario:
@@ -51,9 +53,30 @@ agv_params:
   move_cost: 1 # Cost of moving one unit
   wait_cost: 0.5 # Cost of waiting one unit
   idle_cost: 0.01 # Cost of idling one unit
+  radius: 0.4 # Radius of the AGV (pixel_size)
+  max_speed: 1 # Maximum speed of the AGV (pixel_size / timestep) (1 pixel = 1m and timestep = 0.1s = 10 m/s)
+  max_acceleration: 1 # Maximum acceleration of the AGV (pixel_size / timestep^2)
+  max_deceleration: 1 # Maximum deceleration of the AGV (pixel_size / timestep^2)
+  wheel_radius: 0.1 # Radius of the wheels (m)
+  wheel_distance: 0.4 # Distance between the wheels (m)
+
 
 charging_station_params:
   charge_amount: 4 # Cost of charging one unit
+  radius: 0.5 # Radius of the charging station (pixel_size)
+
+chute_params:
+  radius: 0.5 # Radius of the chute (pixel_size)
+
+infeed_params:
+  radius: 0.5 # Radius of the in-seed (pixel_size)
+
+obstacle_params:
+  radius: 0.5 # Radius of the obstacle (pixel_size)
+
+path_planner:
+  max_comp_time: 50000 # computation time limit, ms
+  max_timestep: 1000 # timestep limit
 
 canvas:
   live_visualisation: True # Visualize the canvas
